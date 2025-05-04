@@ -16,7 +16,8 @@ from contextlib import contextmanager, nullcontext
 from einops import rearrange, repeat
 from torchvision.utils import make_grid
 from ldm.modules.attention import SpatialTransformer
-from ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSequential, ResBlock, Downsample, AttentionBlock
+from ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSequential, ResBlock, Downsample, \
+    AttentionBlock
 from ldm.models.diffusion.ddpm import LatentDiffusion
 from ldm.util import log_txt_as_img, exists, instantiate_from_config, default
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -26,10 +27,12 @@ from ldm.modules.diffusionmodules.model import Encoder
 import lpips
 from kornia import color
 
+
 def disabled_train(self, mode=True):
     """Overwrite model.train with this function to make sure train/eval mode
     does not change anymore."""
     return self
+
 
 class View(nn.Module):
     def __init__(self, *shape):
@@ -41,48 +44,44 @@ class View(nn.Module):
 
 
 class SecretEncoder3(nn.Module):
-    def __init__(self, secret_len, base_res=16, resolution=64) -> None:
+    def __init__(self, ddconfig, embed_dim,secret_len) -> None:
         super().__init__()
-        log_resolution = int(np.log2(resolution))
-        log_base = int(np.log2(base_res))
-        self.secret_len = secret_len
-        self.secret_scaler = nn.Sequential(
-            nn.Linear(secret_len, base_res*base_res*3),
-            nn.SiLU(),
-            View(-1, 3, base_res, base_res),
-            nn.Upsample(scale_factor=(2**(log_resolution-log_base), 2**(log_resolution-log_base))),  # chx16x16 -> chx256x256
-            zero_module(conv_nd(2, 3, 3, 3, padding=1))
-        )  # secret len -> ch x res x res
-    
-    def copy_encoder_weight(self, ae_model):
-        # misses, ignores = self.load_state_dict(ae_state_dict, strict=False)
-        return None
+        self.encoder = Encoder(**ddconfig)
+        self.quant_conv = torch.nn.Conv2d(ddconfig["z_channels"], embed_dim, 1)
 
     def encode(self, x):
-        x = self.secret_scaler(x)
-        return x
-    
+        h = self.encoder(x)
+        h = self.quant_conv(h)
+        return h
+
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
         c = self.encode(c)
         return c, None
 
+    def copy_encoder_weight(self, ae_model):
+        # misses, ignores = self.load_state_dict(ae_state_dict, strict=False)
+        self.encoder.load_state_dict(ae_model.encoder.state_dict())
+        self.quant_conv.load_state_dict(ae_model.quant_conv.state_dict())
+
 
 class SecretEncoder4(nn.Module):
     """same as SecretEncoder3 but with ch as input"""
+
     def __init__(self, secret_len, ch=3, base_res=16, resolution=64) -> None:
         super().__init__()
         log_resolution = int(np.log2(resolution))
         log_base = int(np.log2(base_res))
         self.secret_len = secret_len
         self.secret_scaler = nn.Sequential(
-            nn.Linear(secret_len, base_res*base_res*ch),
+            nn.Linear(secret_len, base_res * base_res * ch),
             nn.SiLU(),
             View(-1, ch, base_res, base_res),
-            nn.Upsample(scale_factor=(2**(log_resolution-log_base), 2**(log_resolution-log_base))),  # chx16x16 -> chx256x256
+            nn.Upsample(scale_factor=(2 ** (log_resolution - log_base), 2 ** (log_resolution - log_base))),
+            # chx16x16 -> chx256x256
             zero_module(conv_nd(2, ch, ch, 3, padding=1))
         )  # secret len -> ch x res x res
-    
+
     def copy_encoder_weight(self, ae_model):
         # misses, ignores = self.load_state_dict(ae_state_dict, strict=False)
         return None
@@ -90,39 +89,42 @@ class SecretEncoder4(nn.Module):
     def encode(self, x):
         x = self.secret_scaler(x)
         return x
-    
+
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
         c = self.encode(c)
         return c, None
-    
+
+
 class SecretEncoder6(nn.Module):
     """join img emb with secret emb"""
+
     def __init__(self, secret_len, ch=3, base_res=16, resolution=64, emode='c3') -> None:
         super().__init__()
         assert emode in ['c3', 'c2', 'm3']
-        
+
         if emode == 'c3':  # c3: concat c and x each has ch channels
-            secret_ch = ch 
-            join_ch = 2*ch
+            secret_ch = ch
+            join_ch = 2 * ch
         elif emode == 'c2':  # c2: concat c (2) and x ave (1)
             secret_ch = 2
             join_ch = ch
         elif emode == 'm3':  # m3: multiply c (ch) and x (ch)
             secret_ch = ch
-            join_ch = ch       
-        
-        # m3: multiply c (ch) and x ave (1)
+            join_ch = ch
+
+            # m3: multiply c (ch) and x ave (1)
         log_resolution = int(np.log2(resolution))
         log_base = int(np.log2(base_res))
         self.secret_len = secret_len
         self.emode = emode
         self.resolution = resolution
         self.secret_scaler = nn.Sequential(
-            nn.Linear(secret_len, base_res*base_res*secret_ch),
+            nn.Linear(secret_len, base_res * base_res * secret_ch),
             nn.SiLU(),
             View(-1, secret_ch, base_res, base_res),
-            nn.Upsample(scale_factor=(2**(log_resolution-log_base), 2**(log_resolution-log_base))),  # chx16x16 -> chx256x256
+            nn.Upsample(scale_factor=(2 ** (log_resolution - log_base), 2 ** (log_resolution - log_base))),
+            # chx16x16 -> chx256x256
         )  # secret len -> ch x res x res
         self.join_encoder = nn.Sequential(
             conv_nd(2, join_ch, join_ch, 3, padding=1),
@@ -133,7 +135,7 @@ class SecretEncoder6(nn.Module):
             nn.SiLU()
         )
         self.out_layer = zero_module(conv_nd(2, ch, ch, 3, padding=1))
-    
+
     def copy_encoder_weight(self, ae_model):
         # misses, ignores = self.load_state_dict(ae_state_dict, strict=False)
         return None
@@ -141,7 +143,7 @@ class SecretEncoder6(nn.Module):
     def encode(self, x):
         x = self.secret_scaler(x)
         return x
-    
+
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
         c = self.encode(c)
@@ -154,9 +156,11 @@ class SecretEncoder6(nn.Module):
         dx = self.join_encoder(x)
         dx = self.out_layer(dx)
         return dx, None
-        
+
+
 class SecretEncoder5(nn.Module):
     """same as SecretEncoder3 but with ch as input"""
+
     def __init__(self, secret_len, ch=3, base_res=16, resolution=64, joint=False) -> None:
         super().__init__()
         log_resolution = int(np.log2(resolution))
@@ -165,20 +169,21 @@ class SecretEncoder5(nn.Module):
         self.joint = joint
         self.resolution = resolution
         self.secret_scaler = nn.Sequential(
-            nn.Linear(secret_len, base_res*base_res*ch),
+            nn.Linear(secret_len, base_res * base_res * ch),
             nn.SiLU(),
             View(-1, ch, base_res, base_res),
-            nn.Upsample(scale_factor=(2**(log_resolution-log_base), 2**(log_resolution-log_base))),  # chx16x16 -> chx256x256
+            nn.Upsample(scale_factor=(2 ** (log_resolution - log_base), 2 ** (log_resolution - log_base))),
+            # chx16x16 -> chx256x256
         )  # secret len -> ch x res x res
         if joint:
             self.join_encoder = nn.Sequential(
-                conv_nd(2, 2*ch, 2*ch, 3, padding=1),
+                conv_nd(2, 2 * ch, 2 * ch, 3, padding=1),
                 nn.SiLU(),
-                conv_nd(2, 2*ch, ch, 3, padding=1),
+                conv_nd(2, 2 * ch, ch, 3, padding=1),
                 nn.SiLU()
             )
         self.out_layer = zero_module(conv_nd(2, ch, ch, 3, padding=1))
-    
+
     def copy_encoder_weight(self, ae_model):
         # misses, ignores = self.load_state_dict(ae_state_dict, strict=False)
         return None
@@ -186,12 +191,13 @@ class SecretEncoder5(nn.Module):
     def encode(self, x):
         x = self.secret_scaler(x)
         return x
-    
+
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
         c = self.encode(c)
         if self.joint:
-            x = thf.interpolate(x, size=(self.resolution, self.resolution), mode="bilinear", align_corners=False, antialias=True)
+            x = thf.interpolate(x, size=(self.resolution, self.resolution), mode="bilinear", align_corners=False,
+                                antialias=True)
             c = self.join_encoder(torch.cat([x, c], dim=1))
         c = self.out_layer(c)
         return c, None
@@ -215,17 +221,17 @@ class SecretEncoder2(nn.Module):
         self.embed_dim = embed_dim
 
         if colorize_nlabels is not None:
-            assert type(colorize_nlabels)==int
+            assert type(colorize_nlabels) == int
             self.register_buffer("colorize", torch.randn(3, colorize_nlabels, 1, 1))
 
         if monitor is not None:
             self.monitor = monitor
 
         self.secret_scaler = nn.Sequential(
-            nn.Linear(secret_len, 32*32*ddconfig.out_ch),
+            nn.Linear(secret_len, 32 * 32 * ddconfig.out_ch),
             nn.SiLU(),
             View(-1, ddconfig.out_ch, 32, 32),
-            nn.Upsample(scale_factor=(2**(log_resolution-5), 2**(log_resolution-5))),  # chx16x16 -> chx256x256
+            nn.Upsample(scale_factor=(2 ** (log_resolution - 5), 2 ** (log_resolution - 5))),  # chx16x16 -> chx256x256
             # zero_module(conv_nd(2, ddconfig.out_ch, ddconfig.out_ch, 3, padding=1))
         )  # secret len -> ch x res x res
         # out_resolution = ddconfig.resolution//(len(ddconfig.ch_mult)-1)
@@ -240,7 +246,6 @@ class SecretEncoder2(nn.Module):
 
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
-
 
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
@@ -273,7 +278,7 @@ class SecretEncoder2(nn.Module):
                 self.model_ema.restore(self.parameters())
                 if context is not None:
                     print(f"{context}: Restored training weights")
-    
+
     def on_train_batch_end(self, *args, **kwargs):
         if self.use_ema:
             self.model_ema(self)
@@ -282,7 +287,7 @@ class SecretEncoder2(nn.Module):
         h = self.encoder(x)
         posterior = h
         return posterior
-    
+
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
         c = self.secret_scaler(c)
@@ -290,6 +295,7 @@ class SecretEncoder2(nn.Module):
         z = self.encode(x)
         # z = self.out_layer(z)
         return z, None
+
 
 class SecretEncoder(nn.Module):
     def __init__(self, secret_len, embed_dim, ddconfig, ckpt_path=None,
@@ -306,11 +312,11 @@ class SecretEncoder(nn.Module):
         self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         assert ddconfig["double_z"]
-        self.quant_conv = torch.nn.Conv2d(2*ddconfig["z_channels"], 2*embed_dim, 1)
+        self.quant_conv = torch.nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
         self.embed_dim = embed_dim
 
         if colorize_nlabels is not None:
-            assert type(colorize_nlabels)==int
+            assert type(colorize_nlabels) == int
             self.register_buffer("colorize", torch.randn(3, colorize_nlabels, 1, 1))
 
         if monitor is not None:
@@ -327,10 +333,10 @@ class SecretEncoder(nn.Module):
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
 
         self.secret_scaler = nn.Sequential(
-            nn.Linear(secret_len, 32*32*ddconfig.out_ch),
+            nn.Linear(secret_len, 32 * 32 * ddconfig.out_ch),
             nn.SiLU(),
             View(-1, ddconfig.out_ch, 32, 32),
-            nn.Upsample(scale_factor=(2**(log_resolution-5), 2**(log_resolution-5))),  # chx16x16 -> chx256x256
+            nn.Upsample(scale_factor=(2 ** (log_resolution - 5), 2 ** (log_resolution - 5))),  # chx16x16 -> chx256x256
             zero_module(conv_nd(2, ddconfig.out_ch, ddconfig.out_ch, 3, padding=1))
         )  # secret len -> ch x res x res
         # out_resolution = ddconfig.resolution//(len(ddconfig.ch_mult)-1)
@@ -366,7 +372,7 @@ class SecretEncoder(nn.Module):
                 self.model_ema.restore(self.parameters())
                 if context is not None:
                     print(f"{context}: Restored training weights")
-    
+
     def on_train_batch_end(self, *args, **kwargs):
         if self.use_ema:
             self.model_ema(self)
@@ -376,7 +382,7 @@ class SecretEncoder(nn.Module):
         moments = self.quant_conv(h)
         posterior = DiagonalGaussianDistribution(moments)
         return posterior
-    
+
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
         c = self.secret_scaler(c)
@@ -434,7 +440,7 @@ class ControlAE(pl.LightningModule):
         self.secret_baselen = 2
         self.secret_len = control_config.params.secret_len
         if self.secret_warmup:
-            assert self.secret_len == 2**(int(np.log2(self.secret_len)))
+            assert self.secret_len == 2 ** (int(np.log2(self.secret_len)))
 
         self.use_ema = use_ema
         if self.use_ema:
@@ -452,11 +458,12 @@ class ControlAE(pl.LightningModule):
         if self.secret_warmup:
             bsz = old_secret.shape[0]
             nrepeats = self.secret_len // self.secret_baselen
-            new_secret  = torch.zeros((bsz, self.secret_baselen), dtype=torch.float).random_(0, 2).repeat_interleave(nrepeats, dim=1)
+            new_secret = torch.zeros((bsz, self.secret_baselen), dtype=torch.float).random_(0, 2).repeat_interleave(
+                nrepeats, dim=1)
             return new_secret.to(old_secret.device)
         else:
             return old_secret
-        
+
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
         keys = list(sd.keys())
@@ -493,11 +500,11 @@ class ControlAE(pl.LightningModule):
 
     def compute_loss(self, pred, target):
         # return thf.mse_loss(pred, target, reduction="none").mean(dim=(1, 2, 3))
-        lpips_loss = self.lpips_loss(pred, target).mean(dim=[1,2,3])
+        lpips_loss = self.lpips_loss(pred, target).mean(dim=[1, 2, 3])
         pred_yuv = color.rgb_to_yuv((pred + 1) / 2)
         target_yuv = color.rgb_to_yuv((target + 1) / 2)
-        yuv_loss = torch.mean((pred_yuv - target_yuv)**2, dim=[2,3])
-        yuv_loss = 1.5*torch.mm(yuv_loss, self.yuv_scales).squeeze(1)
+        yuv_loss = torch.mean((pred_yuv - target_yuv) ** 2, dim=[2, 3])
+        yuv_loss = 1.5 * torch.mm(yuv_loss, self.yuv_scales).squeeze(1)
         return lpips_loss + yuv_loss
 
     def forward(self, x, image, c):
@@ -521,7 +528,7 @@ class ControlAE(pl.LightningModule):
         image = einops.rearrange(image, "b h w c -> b c h w").contiguous()
         x = self.encode_first_stage(image).detach()
         image_rec = self.decode_first_stage(x).detach()
-        
+
         # check if using fixed input (early training phase)
         # if self.training and self.fixed_input:
         if self.fixed_input:
@@ -532,17 +539,17 @@ class ControlAE(pl.LightningModule):
                 self.fixed_input_recon = image_rec.detach().clone()[:bs]
                 self.fixed_control = control.detach().clone()[:bs]  # use for log_images with fixed_input option only
             x, image, image_rec = self.fixed_x, self.fixed_img, self.fixed_input_recon
-        
+
         out = [x, control]
         if return_first_stage:
             out.extend([image, image_rec])
         return out
 
     def decode_first_stage(self, z):
-        z = 1./self.scale_factor * z
+        z = 1. / self.scale_factor * z
         image_rec = self.ae.decode(z)
         return image_rec
-    
+
     def encode_first_stage(self, image):
         encoder_posterior = self.ae.encode(image)
         if isinstance(encoder_posterior, DiagonalGaussianDistribution):
@@ -560,8 +567,8 @@ class ControlAE(pl.LightningModule):
         image_rec = self.decode_first_stage(x)
         # resize
         if img.shape[-1] > 256:
-            img =  thf.interpolate(img, size=(256, 256), mode='bilinear', align_corners=False).detach()
-            image_rec =  thf.interpolate(image_rec, size=(256, 256), mode='bilinear', align_corners=False)
+            img = thf.interpolate(img, size=(256, 256), mode='bilinear', align_corners=False).detach()
+            image_rec = thf.interpolate(image_rec, size=(256, 256), mode='bilinear', align_corners=False)
         if hasattr(self, 'noise') and self.noise.is_activated():
             image_rec_noised = self.noise(image_rec, self.global_step, p=0.9)
         else:
@@ -569,27 +576,43 @@ class ControlAE(pl.LightningModule):
         pred = self.decoder(image_rec_noised)
 
         loss, loss_dict = self.loss_layer(img, image_rec, posterior, c, pred, self.global_step)
-        bit_acc = loss_dict["bit_acc"]
+        ssim_loss = loss_dict["ssim"]
+        l1_loss = loss_dict["l1"]
 
-        bit_acc_ = bit_acc.item()
-
-        if (bit_acc_ > 0.98) and (not self.fixed_input) and self.noise.is_activated():
+        loss_value = ssim_loss + l1_loss
+        if loss_value < 0.1 and not self.fixed_input and self.noise.is_activated():
             self.loss_layer.activate_ramp(self.global_step)
 
-        if (bit_acc_ > 0.95) and (not self.fixed_input):  # ramp up image loss at late training stage
+        if loss_value < 0.2 and not self.fixed_input:
             if hasattr(self, 'noise') and (not self.noise.is_activated()):
-                self.noise.activate(self.global_step) 
-        
-        # if (bit_acc_ > 0.95) and (not self.fixed_input) and self.secret_warmup:
+                self.noise.activate(self.global_step)
+
+        if loss_value < 0.3 and self.fixed_input:
+            print(f'[TRAINING] High loss ({loss_value}) achieved, switch to full image dataset training.')
+            self.fixed_input = ~self.fixed_input
+
+
+        # bit_acc = loss_dict["bit_acc"]
+        #
+        # bit_acc_ = bit_acc.item()
+
+        # if (bit_acc_ > 0.98) and (not self.fixed_input) and self.noise.is_activated():
+        #     self.loss_layer.activate_ramp(self.global_step)
+        #
+        # if (bit_acc_ > 0.95) and (not self.fixed_input):  # ramp up image loss at late training stage
+        #     if hasattr(self, 'noise') and (not self.noise.is_activated()):
+        #         self.noise.activate(self.global_step)
+
+                # if (bit_acc_ > 0.95) and (not self.fixed_input) and self.secret_warmup:
         #     if self.secret_baselen == self.secret_len:  # warm up done
         #         self.secret_warmup = False
         #     else:
         #         print(f'[TRAINING] secret length warmup: {self.secret_baselen} -> {self.secret_baselen*2}')
         #         self.secret_baselen *= 2
 
-        if (bit_acc_ > 0.9) and self.fixed_input:  # execute only once
-            print(f'[TRAINING] High bit acc ({bit_acc_}) achieved, switch to full image dataset training.')
-            self.fixed_input = ~self.fixed_input
+        # if (bit_acc_ > 0.9) and self.fixed_input:  # execute only once
+        #     print(f'[TRAINING] High bit acc ({bit_acc_}) achieved, switch to full image dataset training.')
+        #     self.fixed_input = ~self.fixed_input
         return loss, loss_dict
 
     def training_step(self, batch, batch_idx):
@@ -597,7 +620,7 @@ class ControlAE(pl.LightningModule):
         loss_dict = {f"train/{key}": val for key, val in loss_dict.items()}
         self.log_dict(loss_dict, prog_bar=True,
                       logger=True, on_step=True, on_epoch=True)
-        
+
         self.log("global_step", self.global_step,
                  prog_bar=True, logger=True, on_step=True, on_epoch=False)
         # if self.use_scheduler:
@@ -615,7 +638,7 @@ class ControlAE(pl.LightningModule):
             loss_dict_ema = {'val/' + key + '_ema': loss_dict_ema[key] for key in loss_dict_ema}
         self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
         self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-    
+
     @torch.no_grad()
     def log_images(self, batch, fixed_input=False, **kwargs):
         log = dict()
@@ -632,14 +655,9 @@ class ControlAE(pl.LightningModule):
         log['output'] = image_out
         log['recon'] = img_recon
         return log
-    
+
     def configure_optimizers(self):
         lr = self.learning_rate
         params = list(self.control.parameters()) + list(self.decoder.parameters())
         optimizer = torch.optim.AdamW(params, lr=lr)
         return optimizer
-    
-
-
-
-

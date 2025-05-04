@@ -73,7 +73,10 @@ class ImageFolder(torch.utils.data.Dataset):
         img = pil_loader(os.path.join(self.data_dir, path))
         img = self.transform(img)
         img = np.array(img, dtype=np.float32)/127.5-1.  # [-1, 1]
-        secret = torch.zeros(self.secret_len, dtype=torch.float).random_(0, 2)
+        secret_path = '/home/abracasora/PycharmProjects/RoSteALS/secrets/'
+        secret = pil_loader(os.path.join(secret_path, np.random.choice(os.listdir(secret_path))))
+        secret = self.transform(secret)
+        secret = np.array(secret, dtype=np.float32)/127.5-1.
         return {'image': img, 'secret': secret}  # {'img': x, 'index': index}
 
     def __len__(self) -> int:
