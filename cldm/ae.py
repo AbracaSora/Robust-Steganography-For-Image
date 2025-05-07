@@ -14,7 +14,7 @@ from ldm.modules.diffusionmodules.util import (
 )
 from contextlib import contextmanager, nullcontext
 from einops import rearrange, repeat
-from torchvision.utils import make_grid
+from torchvision.utils import make_grid, save_image
 from ldm.modules.attention import SpatialTransformer
 from ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSequential, ResBlock, Downsample, \
     AttentionBlock
@@ -44,7 +44,7 @@ class View(nn.Module):
 
 
 class SecretEncoder3(nn.Module):
-    def __init__(self, ddconfig, embed_dim,secret_len) -> None:
+    def __init__(self, ddconfig, embed_dim, secret_len) -> None:
         super().__init__()
         self.encoder = Encoder(**ddconfig)
         self.quant_conv = torch.nn.Conv2d(ddconfig["z_channels"], embed_dim, 1)
@@ -526,6 +526,8 @@ class ControlAE(pl.LightningModule):
             bs = image.shape[0]
         # encode image 1st stage
         image = einops.rearrange(image, "b h w c -> b c h w").contiguous()
+        control = einops.rearrange(control, "b h w c -> b c h w").contiguous()
+        # save_image(control, f"output/control_{self.global_step}.png")
         x = self.encode_first_stage(image).detach()
         image_rec = self.decode_first_stage(x).detach()
 
@@ -573,24 +575,30 @@ class ControlAE(pl.LightningModule):
             image_rec_noised = self.noise(image_rec, self.global_step, p=0.9)
         else:
             image_rec_noised = image_rec
+        # print(c.shape,image_rec_noised.shape)
+        # image_rec_latent = self.encode_first_stage(image_rec_noised)
         pred = self.decoder(image_rec_noised)
 
-        loss, loss_dict = self.loss_layer(img, image_rec, posterior, c, pred, self.global_step)
+        loss, loss_dict = self.loss_layer(img, image_rec, self.global_step, c, pred)
+        if self.global_step % 10 == 0:
+            save_image(image_rec, f"output/img_{self.global_step}.png")
+            save_image(img, f"output/img_gt_{self.global_step}.png")
+            save_image(pred, f"output/pred_{self.global_step}.png")
+            save_image(c, f"output/c_{self.global_step}.png")
         ssim_loss = loss_dict["ssim"]
         l1_loss = loss_dict["l1"]
 
-        loss_value = ssim_loss + l1_loss
+        loss_value = (ssim_loss + l1_loss) / 2
         if loss_value < 0.1 and not self.fixed_input and self.noise.is_activated():
             self.loss_layer.activate_ramp(self.global_step)
 
-        if loss_value < 0.2 and not self.fixed_input:
+        if loss_value < 0.15 and not self.fixed_input:
             if hasattr(self, 'noise') and (not self.noise.is_activated()):
                 self.noise.activate(self.global_step)
 
-        if loss_value < 0.3 and self.fixed_input:
-            print(f'[TRAINING] High loss ({loss_value}) achieved, switch to full image dataset training.')
+        if loss_value < 0.2 and self.fixed_input:
+            print(f'[TRAINING] Low loss ({loss_value}) achieved, switch to full image dataset training.')
             self.fixed_input = ~self.fixed_input
-
 
         # bit_acc = loss_dict["bit_acc"]
         #
@@ -603,7 +611,7 @@ class ControlAE(pl.LightningModule):
         #     if hasattr(self, 'noise') and (not self.noise.is_activated()):
         #         self.noise.activate(self.global_step)
 
-                # if (bit_acc_ > 0.95) and (not self.fixed_input) and self.secret_warmup:
+        # if (bit_acc_ > 0.95) and (not self.fixed_input) and self.secret_warmup:
         #     if self.secret_baselen == self.secret_len:  # warm up done
         #         self.secret_warmup = False
         #     else:

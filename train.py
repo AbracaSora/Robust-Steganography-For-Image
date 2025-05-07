@@ -84,7 +84,6 @@ def get_parser():
     parser.add_argument('--config', type=str, default='models/AE.yaml')
     parser.add_argument('-o', '--output', type=str, default='/mnt/fast/nobackup/scratch4weeks/tb0035/projects/diffsteg/controlnet/AE')
     parser.add_argument('--gpus', type=int, default=1)
-    parser.add_argument('--secret_len', type=int, default=0, help='Length of secret message, 0 means using the default value in config file')
     parser.add_argument('--max_image_weight_ratio', type=float, default=2., help='max weight of image loss after ramping')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size, 8 for 1 A100 80GB GPU')
     return parser.parse_args()
@@ -92,15 +91,11 @@ def get_parser():
 def app(args):
     output = args.output
     config = OmegaConf.load(args.config)
-    secret_len = args.secret_len if args.secret_len > 0 else config.model.params.control_config.params.secret_len
-    config.model.params.control_config.params.secret_len = secret_len
     config.model.params.loss_config.params.max_image_weight_ratio = args.max_image_weight_ratio
     
     # data
     data_config = config.get("data", OmegaConf.create())  # config.pop()
     data_config.params.batch_size = args.batch_size
-    data_config.params.train.params.secret_len = secret_len
-    data_config.params.validation.params.secret_len = secret_len
 
     # resolution = 256
     data = instantiate_from_config(data_config)
@@ -120,7 +115,6 @@ def app(args):
     trainer.logdir = output
 
     # model
-    config.model.params.decoder_config.params.secret_len = secret_len
     model = instantiate_from_config(config.model).cpu()
     model.learning_rate = get_learningrate(config.lightning, args)
 
