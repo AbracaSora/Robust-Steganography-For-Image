@@ -30,22 +30,7 @@ model:
     decoder_config:
       target: cldm.diffsteg.SecretDecoder
       params:
-        embed_dim: 3
-        n_embed: 8192
-        ddconfig:
-          double_z: false
-          z_channels: 3
-          resolution: 256
-          in_channels: 3
-          out_ch: 3
-          ch: 128
-          ch_mult:
-            - 1
-            - 2
-            - 4
-          num_res_blocks: 2
-          attn_resolutions: [ ]
-          dropout: 0.0
+        n_channels: 3
         
     control_config:
       target: cldm.ae.SecretEncoder3
@@ -86,13 +71,13 @@ data:
     train:
       target: tools.image_dataset.ImageFolder
       params:
-        data_dir: data/mir1M/images
+        data_dir: /media/新加卷/images/MIRFlickR/images/
         data_list: prep_data/mir_train2.csv
         resize: 256
     validation:
       target: tools.image_dataset.ImageFolder
       params:
-        data_dir: data/mir1M/images
+        data_dir: /media/新加卷/images/MIRFlickR/images/
         data_list: prep_data/mir_val2.csv
         resize: 256
 
