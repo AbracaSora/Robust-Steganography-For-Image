@@ -589,14 +589,14 @@ class ControlAE(pl.LightningModule):
         l1_loss = loss_dict["l1"]
 
         loss_value = (ssim_loss + l1_loss) / 2
-        if loss_value < 0.1 and not self.fixed_input and self.noise.is_activated():
+        if loss_value < 0.05 and not self.fixed_input and self.noise.is_activated():
             self.loss_layer.activate_ramp(self.global_step)
 
-        if loss_value < 0.15 and not self.fixed_input:
-            if hasattr(self, 'noise') and (not self.noise.is_activated()):
-                self.noise.activate(self.global_step)
+        # if loss_value < 0.15 and not self.fixed_input:
+        #     if hasattr(self, 'noise') and (not self.noise.is_activated()):
+        #         self.noise.activate(self.global_step)
 
-        if loss_value < 0.2 and self.fixed_input:
+        if loss_value < 0.1 and self.fixed_input:
             print(f'[TRAINING] Low loss ({loss_value}) achieved, switch to full image dataset training.')
             self.fixed_input = ~self.fixed_input
 
@@ -656,12 +656,14 @@ class ControlAE(pl.LightningModule):
             x, c, img, img_recon = self.get_input(batch, return_first_stage=True)
         x, _ = self(x, img, c)
         image_out = self.decode_first_stage(x)
+        pred = self.decoder(image_out)
         if hasattr(self, 'noise') and self.noise.is_activated():
             img_noise = self.noise(image_out, self.global_step, p=1.0)
             log['noised'] = img_noise
         log['input'] = img
         log['output'] = image_out
         log['recon'] = img_recon
+        log['pred'] = pred
         return log
 
     def configure_optimizers(self):

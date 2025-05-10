@@ -12,7 +12,7 @@ import os
 import sys
 import io
 import time
-import pandas as pd 
+import pandas as pd
 import numpy as np
 import random
 from PIL import Image
@@ -55,7 +55,7 @@ class ImageFolder(torch.utils.data.Dataset):
         self.build_data(data_dir, data_list, **kwargs)
         self.kwargs = kwargs
         self.secret_len = secret_len
-    
+
     def build_data(self, data_dir, data_list, **kwargs):
         self.data_dir = data_dir
         if isinstance(data_list, list):
@@ -67,13 +67,13 @@ class ImageFolder(torch.utils.data.Dataset):
         else:
             raise ValueError('data_list must be a list, str or pd.DataFrame')
         self.N = len(self.data_list)
-    
+
     def __getitem__(self, index):
         path = self.data_list[index]
         img = pil_loader(os.path.join(self.data_dir, path))
         img = self.transform(img)
         img = np.array(img, dtype=np.float32)/127.5-1.  # [-1, 1]
-        secret_path = '/home/abracasora/PycharmProjects/RoSteALS/secrets/'
+        secret_path = '/root/autodl-tmp/rosteals/RoSteALS/secrets'
         secret = pil_loader(os.path.join(secret_path, np.random.choice(os.listdir(secret_path))))
         # secret = self.transform(secret)
         secret = np.array(secret, dtype=np.float32)/127.5-1.
@@ -81,7 +81,7 @@ class ImageFolder(torch.utils.data.Dataset):
 
     def __len__(self) -> int:
         # raise NotImplementedError
-        return self.N 
+        return self.N
 
 class ImageDataset(torch.utils.data.Dataset):
     r"""
@@ -162,7 +162,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
     def __len__(self) -> int:
         # raise NotImplementedError
-        return self.N 
+        return self.N
 
     def __repr__(self) -> str:
         head = "\nDataset " + self.__class__.__name__

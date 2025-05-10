@@ -24,8 +24,6 @@ def main(args):
     print(welcome_message())
     # Load model
     config = OmegaConf.load(args.config).model
-    secret_len = config.params.control_config.params.secret_len
-    config.params.decoder_config.params.secret_len = secret_len
     model = instantiate_from_config(config)
     state_dict = torch.load(args.weight, map_location=torch.device('cpu'))
     if 'global_step' in state_dict:
@@ -98,9 +96,6 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--secret", default='secrets', help="secret message, 7 characters max"
-    )
-    parser.add_argument(
-        "--cover", default='examples/00096.png', help="cover image path"
     )
     parser.add_argument(
         "-o", "--output", default='stego.png', help="output stego image path"
