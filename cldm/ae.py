@@ -44,7 +44,7 @@ class View(nn.Module):
 
 
 class SecretEncoder3(nn.Module):
-    def __init__(self, ddconfig, embed_dim, secret_len) -> None:
+    def __init__(self, ddconfig, embed_dim) -> None:
         super().__init__()
         self.encoder = Encoder(**ddconfig)
         self.quant_conv = torch.nn.Conv2d(ddconfig["z_channels"], embed_dim, 1)
@@ -438,9 +438,9 @@ class ControlAE(pl.LightningModule):
         # secret warmup
         self.secret_warmup = secret_warmup
         self.secret_baselen = 2
-        self.secret_len = control_config.params.secret_len
-        if self.secret_warmup:
-            assert self.secret_len == 2 ** (int(np.log2(self.secret_len)))
+        # self.secret_len = control_config.params.secret_len
+        # if self.secret_warmup:
+        #     assert self.secret_len == 2 ** (int(np.log2(self.secret_len)))
 
         self.use_ema = use_ema
         if self.use_ema:

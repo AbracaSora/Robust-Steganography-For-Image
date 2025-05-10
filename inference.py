@@ -12,7 +12,6 @@ from tools.eval_metrics import compute_psnr, compute_ssim, compute_mse, compute_
 import lpips
 from tools.sifid import SIFID
 from tools.helpers import welcome_message
-from tools.ecc import ECC
 
 
 # def unormalize(x):
@@ -43,13 +42,10 @@ def main(args):
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
     ])
     cover_org = Image.open(args.cover).convert('RGB')
+    secret = Image.open(args.secret).convert('RGB')
     w,h = cover_org.size
     cover = tform(cover_org).unsqueeze(0).cuda()  # 1, 3, 256, 256
-
-    # secret
-    ecc = ECC()
-    secret = ecc.encode_text([args.secret])  # 1, 100
-    secret = torch.from_numpy(secret).cuda().float()  # 1, 100
+    secret = tform(secret).unsqueeze(0).cuda()  # 1, 3, 256, 256
 
     # inference
     lpips_alex = lpips.LPIPS(net='alex').cuda()
@@ -76,13 +72,16 @@ def main(args):
 
         # decode secret
         print('Extracting secret...')
-        secret_pred = (model.decoder(stego) > 0).cpu().numpy()  # 1, 100
-        print(f'Bit acc: {np.mean(secret_pred == secret.cpu().numpy())}')
-        secret_decoded = ecc.decode_text(secret_pred)[0]
-        print(f'Recovered secret: {secret_decoded}')
+        secret_pred = model.decoder(stego)
 
         # save stego
         Image.fromarray(stego_uint8).save(args.output)
+        # save secret
+        secret_pred = (secret_pred + 1) * 127.5
+        secret_pred = secret_pred.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+        secret_pred = np.clip(secret_pred[0], 0, 255).astype(np.uint8)
+        secret_pred = Image.fromarray(secret_pred)
+        secret_pred.save(args.secret_output)
         print(f'Stego saved to {args.output}')
 
 
@@ -95,10 +94,16 @@ if __name__ == '__main__':
         "--image_size", type=int, default=256, help="Height and width of square images."
     )
     parser.add_argument(
-        "--secret", default='secrets', help="secret message, 7 characters max"
+        "--secret", default='secrets/1.png', help="secret image"
     )
     parser.add_argument(
         "-o", "--output", default='stego.png', help="output stego image path"
+    )
+    parser.add_argument(
+        "--cover", default='examples/00096.png', help="cover image path"
+    )
+    parser.add_argument(
+        "--secret_output", default='secret.png', help="output secret image path"
     )
     args = parser.parse_args()
     main(args)
