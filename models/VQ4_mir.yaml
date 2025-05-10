@@ -93,7 +93,7 @@ lightning:
     progress_bar:
       target: pytorch_lightning.callbacks.ProgressBar
       params:
-        refresh_rate: 100
+        refresh_rate: 50
     checkpoint:
       target: pytorch_lightning.callbacks.ModelCheckpoint
       params:
