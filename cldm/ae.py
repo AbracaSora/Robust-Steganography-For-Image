@@ -587,8 +587,9 @@ class ControlAE(pl.LightningModule):
             save_image(c, f"output/c_{self.global_step}.png")
         ssim_loss = loss_dict["ssim"]
         l1_loss = loss_dict["l1"]
+        l2_loss = loss_dict["l2"]
 
-        loss_value = (ssim_loss + l1_loss) / 2
+        loss_value = ssim_loss * 0.4 + l1_loss * 0.3 + l2_loss * 0.3
         if loss_value < 0.05 and not self.fixed_input and self.noise.is_activated():
             self.loss_layer.activate_ramp(self.global_step)
 
