@@ -125,7 +125,8 @@ class ImageReconstructionLoss(torch.nn.Module):
     def compute_secret_loss(self, secret, secret_recon):
         l1 = self.l1_loss(secret_recon, secret)
         ssim_loss = 1.0 - self.ssim(secret_recon, secret)
-        return l1, ssim_loss
+        l2 = self.mse_loss(secret_recon, secret)
+        return l1, ssim_loss, l2
 
     def forward(self, x, x_recon, global_step, secret=None, secret_recon=None):
         recon_loss = self.compute_recon_loss(x.contiguous(), x_recon.contiguous())
@@ -151,9 +152,10 @@ class ImageReconstructionLoss(torch.nn.Module):
         secret_loss = 0.0
         l1 = 0.0
         ssim = 0.0
+        l2 = 0.0
         if secret is not None and secret_recon is not None:
-            l1, ssim = self.compute_secret_loss(secret.contiguous(), secret_recon.contiguous())
-            secret_loss = (l1 * 0.5 + ssim * 0.5)
+            l1, ssim, l2 = self.compute_secret_loss(secret.contiguous(), secret_recon.contiguous())
+            secret_loss = (l1 * 0.3 + l2 * 0.3 + ssim * 0.4) * self.secret_weight
 
         # # dynamic ramp weight
         # if global_step >= self.step0.item():
@@ -177,6 +179,7 @@ class ImageReconstructionLoss(torch.nn.Module):
             'perceptual_loss': perceptual.mean(),
             'l1': l1.item() if isinstance(l1, torch.Tensor) else 0.0,
             'ssim': ssim.item() if isinstance(ssim, torch.Tensor) else 0.0,
+            'l2': l2.item() if isinstance(l2, torch.Tensor) else 0.0,
             'final_loss': total_loss.item(),
             'logvar': self.logvar.item(),
             'image_weight': image_weight,
