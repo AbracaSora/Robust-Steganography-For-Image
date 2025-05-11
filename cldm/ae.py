@@ -580,11 +580,11 @@ class ControlAE(pl.LightningModule):
         pred = self.decoder(image_rec_noised)
 
         loss, loss_dict = self.loss_layer(img, image_rec, self.global_step, c, pred)
-        if self.global_step % 10 == 0:
-            save_image(image_rec, f"output/img_{self.global_step}.png")
-            save_image(img, f"output/img_gt_{self.global_step}.png")
-            save_image(pred, f"output/pred_{self.global_step}.png")
-            save_image(c, f"output/c_{self.global_step}.png")
+        # if self.global_step % 10 == 0:
+        #     save_image(image_rec, f"output/img_{self.global_step}.png")
+        #     save_image(img, f"output/img_gt_{self.global_step}.png")
+        #     save_image(pred, f"output/pred_{self.global_step}.png")
+        #     save_image(c, f"output/c_{self.global_step}.png")
         ssim_loss = loss_dict["ssim"]
         l1_loss = loss_dict["l1"]
         l2_loss = loss_dict["l2"]
