@@ -17,11 +17,11 @@ for i in range(len(col)):
 def calculate_average(df, interval):
     return df.groupby(df.index // interval).mean()
 
-# 计算平均值
-average_df = calculate_average(result, 22250 // 50)
-print(average_df.head())
-# 绘制平均值
-for i in range(len(col)):
-    plt.plot(average_df['global_step'], average_df[col[i]], label=col[i])
-    plt.title(col[i])
-    plt.show()
+# # 计算平均值
+# average_df = calculate_average(result, 22250 // 50)
+# print(average_df.head())
+# # 绘制平均值
+# for i in range(len(col)):
+#     plt.plot(average_df['global_step'], average_df[col[i]], label=col[i])
+#     plt.title(col[i])
+#     plt.show()
