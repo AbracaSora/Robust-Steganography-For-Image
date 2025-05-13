@@ -41,7 +41,7 @@ To replicate our model, you can download the MIRFlickR dataset from their offici
 
 ## Train
 ```
-python train.py --config models/VQ4_mir.yaml --secret_len 100 --max_image_weight_ratio 10 --batch_size 4 -o saved_models
+python train.py --config models/VQ4_mir.yaml --max_image_weight_ratio 10 --batch_size 4 -o saved_models
 
 ```
 where batch_size=4 is enough to fit a 12GB GPU; adjust the `max_image_weight_ratio` parameter to control the trade-off between stego quality and secret recovery performance (lower value means lower stego quality but higher secret recovery, please check Fig.8 in our paper for more details).

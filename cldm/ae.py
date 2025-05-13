@@ -434,7 +434,7 @@ class ControlAE(pl.LightningModule):
         self.fixed_input_recon = None
         self.fixed_control = None
         self.register_buffer("fixed_input", torch.tensor(True))
-
+        self.register_buffer('fixed_secret', torch.tensor(False))
         # secret warmup
         self.secret_warmup = secret_warmup
         self.secret_baselen = 2
@@ -542,6 +542,12 @@ class ControlAE(pl.LightningModule):
                 self.fixed_control = control.detach().clone()[:bs]  # use for log_images with fixed_input option only
             x, image, image_rec = self.fixed_x, self.fixed_img, self.fixed_input_recon
 
+        if self.fixed_secret:
+            if self.fixed_control is None:
+                print('[TRAINING] Warmup - using fixed secret for now!')
+                self.fixed_control = control.detach().clone()[:bs]
+            control = self.fixed_control
+
         out = [x, control]
         if return_first_stage:
             out.extend([image, image_rec])
@@ -593,6 +599,13 @@ class ControlAE(pl.LightningModule):
         if loss_value < 0.05 and not self.fixed_input and self.noise.is_activated():
             self.loss_layer.activate_ramp(self.global_step)
 
+        image_loss = loss_dict["image_loss"]
+
+        if image_loss < 0.2 and self.fixed_secret:
+            print(f'[TRAINING] Low image loss ({image_loss}) achieved, switch to full image dataset training.')
+            self.fixed_secret = ~self.fixed_secret
+
+
         # if loss_value < 0.15 and not self.fixed_input:
         #     if hasattr(self, 'noise') and (not self.noise.is_activated()):
         #         self.noise.activate(self.global_step)
@@ -600,6 +613,7 @@ class ControlAE(pl.LightningModule):
         if loss_value < 0.1 and self.fixed_input:
             print(f'[TRAINING] Low loss ({loss_value}) achieved, switch to full image dataset training.')
             self.fixed_input = ~self.fixed_input
+            self.fixed_secret = ~self.fixed_secret
 
         # bit_acc = loss_dict["bit_acc"]
         #
