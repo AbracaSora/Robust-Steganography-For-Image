@@ -155,7 +155,7 @@ class ImageReconstructionLoss(torch.nn.Module):
         l2 = 0.0
         if secret is not None and secret_recon is not None:
             l1, ssim, l2 = self.compute_secret_loss(secret.contiguous(), secret_recon.contiguous())
-            secret_loss = (l1 * 0.3 + l2 * 0.3 + ssim * 0.4) * self.secret_weight
+            secret_loss = (l1 * 0.3 + l2 * 0.3 + ssim * 0.4)
 
         # # dynamic ramp weight
         # if global_step >= self.step0.item():
