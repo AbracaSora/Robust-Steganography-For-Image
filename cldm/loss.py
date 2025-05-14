@@ -181,7 +181,7 @@ class ImageReconstructionLoss(torch.nn.Module):
             'ssim': ssim.item() if isinstance(ssim, torch.Tensor) else 0.0,
             'l2': l2.item() if isinstance(l2, torch.Tensor) else 0.0,
             'final_loss': total_loss.item(),
-            'logvar': self.logvar.item(),
+            # 'logvar': self.logvar.item(),
             'image_weight': image_weight,
             'image_loss': loss.mean(),
             'secret_loss': secret_loss

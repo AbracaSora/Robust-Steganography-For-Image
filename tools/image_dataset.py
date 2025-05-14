@@ -49,12 +49,13 @@ def dataset_wrapper(data_dir, data_list, **kwargs):
 
 class ImageFolder(torch.utils.data.Dataset):
     _repr_indent = 4
-    def __init__(self, data_dir, data_list, secret_len=100, resize=256, transform=None, **kwargs):
+    def __init__(self, data_dir, data_list,secret_path,secret_len=100, resize=256, transform=None, **kwargs):
         super().__init__()
         self.transform = transforms.RandomResizedCrop((resize, resize), scale=(0.8, 1.0), ratio=(0.75, 1.3333333333333333)) if transform is None else transform
         self.build_data(data_dir, data_list, **kwargs)
         self.kwargs = kwargs
         self.secret_len = secret_len
+        self.secret_path = secret_path
 
     def build_data(self, data_dir, data_list, **kwargs):
         self.data_dir = data_dir
@@ -73,8 +74,7 @@ class ImageFolder(torch.utils.data.Dataset):
         img = pil_loader(os.path.join(self.data_dir, path))
         img = self.transform(img)
         img = np.array(img, dtype=np.float32)/127.5-1.  # [-1, 1]
-        secret_path = '/root/autodl-tmp/rosteals/RoSteALS/secrets'
-        secret = pil_loader(os.path.join(secret_path, np.random.choice(os.listdir(secret_path))))
+        secret = pil_loader(os.path.join(self.secret_path, np.random.choice(os.listdir(self.secret_path))))
         # secret = self.transform(secret)
         secret = np.array(secret, dtype=np.float32)/127.5-1.
         return {'image': img, 'secret': secret}  # {'img': x, 'index': index}

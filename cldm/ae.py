@@ -596,12 +596,12 @@ class ControlAE(pl.LightningModule):
         l2_loss = loss_dict["l2"]
 
         loss_value = ssim_loss * 0.4 + l1_loss * 0.3 + l2_loss * 0.3
-        if loss_value < 0.05 and not self.fixed_input and self.noise.is_activated():
+        if loss_value < 0.08 and not self.fixed_input and self.noise.is_activated():
             self.loss_layer.activate_ramp(self.global_step)
 
         image_loss = loss_dict["image_loss"]
 
-        if image_loss < 0.2 and self.fixed_secret:
+        if image_loss < 0.06 and self.fixed_secret:
             print(f'[TRAINING] Low image loss ({image_loss}) achieved, switch to full image dataset training.')
             self.fixed_secret = ~self.fixed_secret
 
@@ -610,7 +610,7 @@ class ControlAE(pl.LightningModule):
         #     if hasattr(self, 'noise') and (not self.noise.is_activated()):
         #         self.noise.activate(self.global_step)
 
-        if loss_value < 0.1 and self.fixed_input:
+        if loss_value < 0.08 and self.fixed_input:
             print(f'[TRAINING] Low loss ({loss_value}) achieved, switch to full image dataset training.')
             self.fixed_input = ~self.fixed_input
             self.fixed_secret = ~self.fixed_secret
