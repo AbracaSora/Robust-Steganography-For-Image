@@ -579,36 +579,44 @@ class ControlNet(nn.Module):
 
 
 class SecretDecoder(nn.Module):
-    def __init__(self, n_channels=3, n_classes=3, bilinear=True):
+    def __init__(self, n_channels=3, n_classes=3):
         super(SecretDecoder, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
-        self.bilinear = bilinear
+        # 编码器部分（Conv1 ~ Conv3）
+        self.encoder = nn.Sequential(
+            nn.Conv2d(self.n_channels, 64, kernel_size=3, padding=1, stride=1),  # Conv1
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
 
-        self.inc = (DoubleConv(n_channels, 64))
-        self.down1 = (Down(64, 128))
-        self.down2 = (Down(128, 256))
-        self.down3 = (Down(256, 512))
-        factor = 2 if bilinear else 1
-        self.down4 = (Down(512, 1024 // factor))
-        self.up1 = (Up(1024, 512 // factor, bilinear))
-        self.up2 = (Up(512, 256 // factor, bilinear))
-        self.up3 = (Up(256, 128 // factor, bilinear))
-        self.up4 = (Up(128, 64, bilinear))
-        self.outc = (OutConv(64, n_classes))
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=1),  # Conv2
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(128, 256, kernel_size=3, padding=1, stride=1),  # Conv3
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+        )
+
+        # 解码器部分（Conv4 ~ Conv6）
+        self.decoder = nn.Sequential(
+            nn.Conv2d(256, 128, kernel_size=3, padding=1, stride=1),  # Conv4
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(128, 64, kernel_size=3, padding=1, stride=1),  # Conv5
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(64, self.n_classes, kernel_size=3, padding=1, stride=1),  # Conv6
+            nn.BatchNorm2d(self.n_classes),
+            nn.Sigmoid()  # 输出层使用 Sigmoid
+        )
 
     def forward(self, x):
-        x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
-        logits = self.outc(x)
-        return logits
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
 
 class ControlLDM(LatentDiffusion):
 
