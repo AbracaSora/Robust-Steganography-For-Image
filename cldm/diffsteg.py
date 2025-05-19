@@ -616,6 +616,9 @@ class SecretDecoder(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
         x = self.decoder(x)
+
+        if self.n_classes == 1:
+            x = x.repeat(1, 3, 1, 1)  # 将单通道输出扩展为三通道
         return x
 
 class ControlLDM(LatentDiffusion):
