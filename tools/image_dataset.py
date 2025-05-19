@@ -20,11 +20,12 @@ from typing import Any, Callable, List, Optional, Tuple
 import torch
 from torchvision import transforms
 from .base_lmdb import PILlmdb, ArrayDatabase
+from .secret_generator import Generator
 # from . import debug
 
 
 def worker_init_fn(worker_id):
-    # to be passed to torch.utils.data.DataLoader to fix the 
+    # to be passed to torch.utils.data.DataLoader to fix the
     #  random seed issue with numpy in multi-worker settings
     torch_seed = torch.initial_seed()
     random.seed(torch_seed + worker_id)
@@ -56,6 +57,7 @@ class ImageFolder(torch.utils.data.Dataset):
         self.kwargs = kwargs
         self.secret_len = secret_len
         self.secret_path = secret_path
+        self.generator = Generator(36,50,256)
 
     def build_data(self, data_dir, data_list, **kwargs):
         self.data_dir = data_dir
@@ -74,8 +76,9 @@ class ImageFolder(torch.utils.data.Dataset):
         img = pil_loader(os.path.join(self.data_dir, path))
         img = self.transform(img)
         img = np.array(img, dtype=np.float32)/127.5-1.  # [-1, 1]
-        secret = pil_loader(os.path.join(self.secret_path, np.random.choice(os.listdir(self.secret_path))))
-        # secret = self.transform(secret)
+
+        secret = self.generator.generate()
+        secret = pil_loader(secret)
         secret = np.array(secret, dtype=np.float32)/127.5-1.
         return {'image': img, 'secret': secret}  # {'img': x, 'index': index}
 
