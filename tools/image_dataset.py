@@ -77,8 +77,7 @@ class ImageFolder(torch.utils.data.Dataset):
         img = self.transform(img)
         img = np.array(img, dtype=np.float32)/127.5-1.  # [-1, 1]
 
-        secret = self.generator.generate()
-        secret = pil_loader(secret)
+        secret = self.generator.generate().convert('RGB')
         secret = np.array(secret, dtype=np.float32)/127.5-1.
         return {'image': img, 'secret': secret}  # {'img': x, 'index': index}
 

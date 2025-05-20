@@ -61,7 +61,6 @@ class Generator:
         for line, line_height in zip(lines, line_heights):
             draw.text((x_offset, y_offset), line, font=font, fill=0)
             y_offset += line_height  # 更新Y坐标，绘制下一行
-        img.save(f'secret.png')
 
-        # 返回文件路径
-        return f'secret.png'
+        # 返回文件
+        return img
