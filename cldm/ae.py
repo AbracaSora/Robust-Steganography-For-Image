@@ -584,7 +584,10 @@ class ControlAE(pl.LightningModule):
         # print(c.shape,image_rec_noised.shape)
         # image_rec_latent = self.encode_first_stage(image_rec_noised)
         pred = self.decoder(image_rec_noised)
-
+        # 打印c的最大值和最小值
+        # print(f"c max: {c.max()}, c min: {c.min()}")
+        # 打印pred的最大值和最小值
+        # print(f"pred max: {pred.max()}, pred min: {pred.min()}")
         loss, loss_dict = self.loss_layer(img, image_rec, self.global_step, c, pred)
         # if self.global_step % 10 == 0:
         #     save_image(image_rec, f"output/img_{self.global_step}.png")

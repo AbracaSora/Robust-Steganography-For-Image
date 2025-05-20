@@ -579,7 +579,7 @@ class ControlNet(nn.Module):
 
 
 class SecretDecoder(nn.Module):
-    def __init__(self, n_channels=3, n_classes=3, bilinear=True):
+    def __init__(self, n_channels=3, n_classes=1, bilinear=True):
         super(SecretDecoder, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
@@ -608,7 +608,12 @@ class SecretDecoder(nn.Module):
         x = self.up3(x, x2)
         x = self.up4(x, x1)
         logits = self.outc(x)
+
+        if self.n_classes == 1:
+            logits = logits.repeat(1, 3, 1, 1)
+
         return logits
+
 
 class ControlLDM(LatentDiffusion):
 
@@ -812,10 +817,10 @@ class DoubleConv(nn.Module):
         if not mid_channels:
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, stride=1, bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, stride=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
@@ -871,6 +876,10 @@ class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.tanh = nn.Tanh()
 
     def forward(self, x):
-        return self.conv(x)
+        x = self.conv(x)
+        if self.tanh:
+            x = self.tanh(x)
+        return x
