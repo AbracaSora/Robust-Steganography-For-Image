@@ -434,7 +434,6 @@ class ControlAE(pl.LightningModule):
         self.fixed_input_recon = None
         self.fixed_control = None
         self.register_buffer("fixed_input", torch.tensor(True))
-        self.register_buffer('fixed_secret', torch.tensor(False))
         # secret warmup
         self.secret_warmup = secret_warmup
         self.secret_baselen = 2
@@ -542,11 +541,11 @@ class ControlAE(pl.LightningModule):
                 self.fixed_control = control.detach().clone()[:bs]  # use for log_images with fixed_input option only
             x, image, image_rec = self.fixed_x, self.fixed_img, self.fixed_input_recon
 
-        if self.fixed_secret:
-            if self.fixed_control is None:
-                print('[TRAINING] Warmup - using fixed secret for now!')
-                self.fixed_control = control.detach().clone()[:bs]
-            control = self.fixed_control
+        # if self.fixed_secret:
+        #     if self.fixed_control is None:
+        #         print('[TRAINING] Warmup - using fixed secret for now!')
+        #         self.fixed_control = control.detach().clone()[:bs]
+        #     control = self.fixed_control
 
         out = [x, control]
         if return_first_stage:
@@ -594,19 +593,10 @@ class ControlAE(pl.LightningModule):
         #     save_image(img, f"output/img_gt_{self.global_step}.png")
         #     save_image(pred, f"output/pred_{self.global_step}.png")
         #     save_image(c, f"output/c_{self.global_step}.png")
-        ssim_loss = loss_dict["ssim"]
-        l1_loss = loss_dict["l1"]
-        l2_loss = loss_dict["l2"]
 
-        loss_value = ssim_loss * 0.4 + l1_loss * 0.3 + l2_loss * 0.3
-        if loss_value < 0.08 and not self.fixed_input and self.noise.is_activated():
+        loss_value = loss_dict['secret_loss'].item()
+        if loss_value < 0.08 and not self.fixed_input:
             self.loss_layer.activate_ramp(self.global_step)
-
-        image_loss = loss_dict["image_loss"]
-
-        if image_loss < 0.06 and self.fixed_secret:
-            print(f'[TRAINING] Low image loss ({image_loss}) achieved, switch to full image dataset training.')
-            self.fixed_secret = ~self.fixed_secret
 
 
         # if loss_value < 0.15 and not self.fixed_input:
@@ -616,7 +606,6 @@ class ControlAE(pl.LightningModule):
         if loss_value < 0.08 and self.fixed_input:
             print(f'[TRAINING] Low loss ({loss_value}) achieved, switch to full image dataset training.')
             self.fixed_input = ~self.fixed_input
-            self.fixed_secret = ~self.fixed_secret
 
         # bit_acc = loss_dict["bit_acc"]
         #
