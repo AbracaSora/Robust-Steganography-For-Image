@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torchmetrics
@@ -127,6 +128,7 @@ class ImageReconstructionLoss(torch.nn.Module):
         ssim_loss = 1.0 - self.ssim(secret_recon, secret)
         l2 = self.mse_loss(secret_recon, secret)
         return l1, ssim_loss, l2
+        # return l1, l2
 
     def forward(self, x, x_recon, global_step, secret=None, secret_recon=None):
         recon_loss = self.compute_recon_loss(x.contiguous(), x_recon.contiguous())
@@ -149,14 +151,31 @@ class ImageReconstructionLoss(torch.nn.Module):
         # logvar loss scaling
         loss = loss / torch.exp(self.logvar) + self.logvar
 
+        secret = secret.repeat(1,3,1,1)
+        secret_recon = secret_recon.repeat(1,3,1,1)
+        # # 设置白色阈值（0~1），一般 0.95 表示接近白色
+        # white_threshold = 0.95
+        #
+        # # 生成权重 mask：非白色区域权重大（白色像素通常值为1）
+        # # 如果图像是 RGB，这里取通道均值作为亮度近似（也可以取最大通道）
+        # brightness = secret.mean(dim=1, keepdim=True)  # shape: [B, 1, H, W]
+        # mask = (brightness < white_threshold).float()  # 非白区域为1，其余为0
+        #
+        # # 权重定义：白区域权重为1，非白区域权重为1+extra_weight
+        # extra_weight = 10.0
+        # weight = 1.0 + extra_weight * mask  # shape: [B, 1, H, W]
+        #
+        # # 计算加权 MSE 损失
+        # mse = (secret_recon - secret) ** 2
+        # secret_loss = (mse * weight).mean()
+
         secret_loss = 0.0
         l1 = 0.0
         ssim = 0.0
         l2 = 0.0
         if secret is not None and secret_recon is not None:
             l1, ssim, l2 = self.compute_secret_loss(secret.contiguous(), secret_recon.contiguous())
-            secret_loss = (l1 * 0.3 + l2 * 0.3 + ssim * 0.4)
-
+            secret_loss = (l1 * 0.2 + l2 * 0.2 + ssim + self.perceptual_loss(secret_recon.contiguous(), secret.contiguous()).mean(dim=[1, 2, 3]))
         # # dynamic ramp weight
         # if global_step >= self.step0.item():
         #     weight = 1 + min(self.max_weight, self.max_weight * (global_step - self.step0.item()) / self.ramp)

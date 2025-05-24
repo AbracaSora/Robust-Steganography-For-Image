@@ -3,6 +3,7 @@ import einops
 import torch
 import torch as th
 import torch.nn as nn
+from numpy.fft.helper import ifftshift
 from torch.nn import functional as thf
 import pytorch_lightning as pl
 import torchvision
@@ -56,6 +57,13 @@ class SecretEncoder3(nn.Module):
 
     def forward(self, x, c):
         # x: [B, C, H, W], c: [B, secret_len]
+        c = torch.fft.fft2(c)
+        c = torch.fft.fftshift(c)
+        real = (torch.real(c) + 2000) / 60000
+        # print(f'real max {real.max()}, min {real.min()}')
+        imag = (torch.imag(c) + 2000) / 4000
+        # print(f'imag max {imag.max()}, min {imag.min()}')
+        c = torch.stack([real, imag], dim=1)  # [B, 2, H, W]
         c = self.encode(c)
         return c, None
 
@@ -393,6 +401,17 @@ class SecretEncoder(nn.Module):
         return z, posterior
 
 
+class WeightedSum(nn.Module):
+    def __init__(self, alpha=1.):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.tensor(alpha))
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x, y):
+        weight = self.sigmoid(self.alpha)
+        return x + weight * y
+
+
 class ControlAE(pl.LightningModule):
     def __init__(self,
                  first_stage_key,
@@ -414,11 +433,12 @@ class ControlAE(pl.LightningModule):
         self.ae = instantiate_from_config(first_stage_config)
         self.control = instantiate_from_config(control_config)
         self.decoder = instantiate_from_config(decoder_config)
+        self.weighted_sum = WeightedSum()
         if noise_config != '__none__':
             print('Using noise')
             self.noise = instantiate_from_config(noise_config)
         # copy weights from first stage
-        self.control.copy_encoder_weight(self.ae)
+        # self.control.copy_encoder_weight(self.ae)
         # freeze first stage
         self.ae.eval()
         self.ae.train = disabled_train
@@ -511,7 +531,7 @@ class ControlAE(pl.LightningModule):
             eps, posterior = self.control(x, c)
         else:
             eps, posterior = self.control(image, c)
-        return x + eps, posterior
+        return self.weighted_sum(x, eps), posterior
 
     @torch.no_grad()
     def get_input(self, batch, return_first_stage=False, bs=None):
@@ -525,7 +545,7 @@ class ControlAE(pl.LightningModule):
             bs = image.shape[0]
         # encode image 1st stage
         image = einops.rearrange(image, "b h w c -> b c h w").contiguous()
-        control = einops.rearrange(control, "b h w c -> b c h w").contiguous()
+        # control = einops.rearrange(control, "b h w c -> b c h w").contiguous()
         # save_image(control, f"output/control_{self.global_step}.png")
         x = self.encode_first_stage(image).detach()
         image_rec = self.decode_first_stage(x).detach()
@@ -580,13 +600,9 @@ class ControlAE(pl.LightningModule):
             image_rec_noised = self.noise(image_rec, self.global_step, p=0.9)
         else:
             image_rec_noised = image_rec
-        # print(c.shape,image_rec_noised.shape)
         # image_rec_latent = self.encode_first_stage(image_rec_noised)
         pred = self.decoder(image_rec_noised)
-        # 打印c的最大值和最小值
-        # print(f"c max: {c.max()}, c min: {c.min()}")
-        # 打印pred的最大值和最小值
-        # print(f"pred max: {pred.max()}, pred min: {pred.min()}")
+        # print(pred.shape)
         loss, loss_dict = self.loss_layer(img, image_rec, self.global_step, c, pred)
         # if self.global_step % 10 == 0:
         #     save_image(image_rec, f"output/img_{self.global_step}.png")
@@ -595,9 +611,8 @@ class ControlAE(pl.LightningModule):
         #     save_image(c, f"output/c_{self.global_step}.png")
 
         loss_value = loss_dict['secret_loss'].item()
-        if loss_value < 0.08 and not self.fixed_input:
-            self.loss_layer.activate_ramp(self.global_step)
-
+        # if loss_value < 0.08 and not self.fixed_input:
+        #     self.loss_layer.activate_ramp(self.global_step)
 
         # if loss_value < 0.15 and not self.fixed_input:
         #     if hasattr(self, 'noise') and (not self.noise.is_activated()):
@@ -662,6 +677,7 @@ class ControlAE(pl.LightningModule):
         else:
             x, c, img, img_recon = self.get_input(batch, return_first_stage=True)
         x, _ = self(x, img, c)
+
         image_out = self.decode_first_stage(x)
         pred = self.decoder(image_out)
         if hasattr(self, 'noise') and self.noise.is_activated():
@@ -675,6 +691,7 @@ class ControlAE(pl.LightningModule):
 
     def configure_optimizers(self):
         lr = self.learning_rate
-        params = list(self.control.parameters()) + list(self.decoder.parameters())
+        params = list(self.control.parameters()) + list(self.decoder.parameters()) + list(
+            self.weighted_sum.parameters())
         optimizer = torch.optim.AdamW(params, lr=lr)
         return optimizer

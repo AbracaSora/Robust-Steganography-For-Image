@@ -76,8 +76,9 @@ class ImageFolder(torch.utils.data.Dataset):
         img = self.transform(img)
         img = np.array(img, dtype=np.float32)/127.5-1.  # [-1, 1]
 
-        secret = self.generator.generate().convert('RGB')
-        secret = np.array(secret, dtype=np.float32)/127.5-1.
+        secret = self.generator.generate().convert('L')
+        secret = np.array(secret, dtype=np.float32)/255.  # [0, 1]
+        # secret = np.expand_dims(secret, axis=1)  # add channel dimension
         return {'image': img, 'secret': secret}  # {'img': x, 'index': index}
 
     def __len__(self) -> int:

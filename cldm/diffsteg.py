@@ -607,11 +607,19 @@ class SecretDecoder(nn.Module):
         x = self.up2(x, x3)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
-        logits = self.outc(x)
-
-        if self.n_classes == 1:
-            logits = logits.repeat(1, 3, 1, 1)
-
+        x = self.outc(x)
+        real_pred = x[:, 0, :, :]
+        imag_pred = x[:, 1, :, :]
+        real_pred = (real_pred * 60000) - 2000
+        imag_pred = (imag_pred * 4000) - 2000
+        # print(f'real_pred max: {real_pred.max()}, min: {real_pred.min()}')
+        # print(f'imag_pred max: {imag_pred.max()}, min: {imag_pred.min()}')
+        # print(f"pred shape: {pred.shape}, c shape: {c.shape}")
+        logits = torch.complex(real_pred, imag_pred)
+        logits = torch.fft.ifftshift(logits)
+        logits = torch.fft.ifft2(logits)
+        logits = torch.abs(logits)
+        logits = logits.expand(1, -1, -1)  # expand to 3 channels
         return logits
 
 
@@ -877,9 +885,9 @@ class OutConv(nn.Module):
         super(OutConv, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.conv(x)
-        if self.tanh:
-            x = self.tanh(x)
+        # x = self.sigmoid(x)
         return x
