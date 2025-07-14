@@ -54,6 +54,7 @@ model:
       target: cldm.loss.ImageReconstructionLoss
       params:
         recon_type: yuv
+        secret_weight: 2
     noise_config:
       target: cldm.transformations.TransformNet
       params:
